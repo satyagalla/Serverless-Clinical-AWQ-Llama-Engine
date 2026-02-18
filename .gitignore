@@ -1,3 +1,6 @@
 venv/
 data/
 .env
+
+lora_model/*.safetensors
+lora_model/*.md
