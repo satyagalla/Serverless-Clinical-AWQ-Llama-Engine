@@ -4,3 +4,5 @@ data/
 
 lora_model/*.safetensors
 lora_model/*.md
+
+requirements.txt
