@@ -12,11 +12,9 @@ load_dotenv()
 
 # --- CONFIGURATION ---
 # Get Key: https://aistudio.google.com/app/apikey
-# Ensure you set this in your terminal or replace below:
-# os.environ["GOOGLE_API_KEY"] = "YOUR_KEY_HERE"
+# Ensure you set this in your .env file:
+# GOOGLE_API_KEY = "YOUR_KEY_HERE"
 
-if "GOOGLE_API_KEY" not in os.environ:
-    raise ValueError("Please set GOOGLE_API_KEY environment variable or hardcode it.")
 
 # --- 1. DEFINE THE BLUEPRINT ---
 class MedicalFlashcard(BaseModel):
