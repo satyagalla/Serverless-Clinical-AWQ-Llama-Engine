@@ -8,3 +8,5 @@ lora_model/*.safetensors
 lora_model/*.md
 
 requirements.txt
+
+cloud_corpus.json
