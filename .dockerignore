@@ -1,0 +1,20 @@
+# Local Environment & Secrets
+venv/
+.env
+.git/
+
+# Massive Training Data & Models (THE CPU KILLERS)
+data/
+chroma_db_production/
+lora_model/
+
+# Python Trash
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Development notebooks
+*.ipynb
