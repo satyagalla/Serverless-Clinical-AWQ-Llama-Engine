@@ -1,0 +1,16 @@
+datasets
+pinecone-client
+pinecone-text
+transformers
+torch
+sentencepiece
+python-dotenv
+langgraph
+langchain
+langchain_groq
+langchain_community
+chromadb
+sentence-transformers
+rank_bm25
+tqdm
+numpy

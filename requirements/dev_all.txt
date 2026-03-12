@@ -1,0 +1,3 @@
+-r local_prototype.txt
+-r aws_docker.txt
+-r hf_serverless.txt

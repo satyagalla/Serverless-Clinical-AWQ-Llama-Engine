@@ -7,6 +7,5 @@ data/
 lora-production/*.safetensors
 lora-production/*.md
 
-requirements.txt
 
 cloud_corpus.json
