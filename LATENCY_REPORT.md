@@ -54,6 +54,12 @@ To transition from a "working prototype" to a "production-grade agent," the foll
     Replacing `bitsandbytes` with **AWQ** (Activation-aware Weight Quantization) allows for "fused kernels." This performs dequantization and math in a single hardware step, eliminating the dequantization tax.
 3.  **Compute Shift:** Move the RAG embedding logic from Hugging Face's throttled CPUs to Modal's dedicated physical cores to eliminate the final 1-second network overhead.
 
+--- 🧠 LLM INFRASTRUCTURE METRICS ---
+├─ Input Prompt:      926 tokens
+├─ TTFT:              1.358s
+├─ Throughput:        12.51 tokens/sec
+└─ Total GPU Time:    18.386s
+
 ![alt text](gpu_metrics_modal_bitsandbytes.png)
 
 ![alt text](gpu_metrics_modal_bitsandbytes_2.png)
