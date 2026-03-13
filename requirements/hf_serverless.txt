@@ -1,5 +1,7 @@
+requests
 gradio
 transformers
-peft
-bitsandbytes
-pinecone-client
+torch
+pinecone
+pinecone-text
+sentencepiece

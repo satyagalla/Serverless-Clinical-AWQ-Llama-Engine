@@ -1,11 +1,12 @@
 __pycache__/
 chroma_db_production/
 venv/
-data/
 .env
 
 lora-production/*.safetensors
 lora-production/*.md
 
 
-cloud_corpus.json
+*.json
+*.jsonl
+*.csv

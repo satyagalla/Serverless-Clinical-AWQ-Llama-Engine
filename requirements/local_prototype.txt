@@ -1,5 +1,5 @@
-datasets
-pinecone-client
+datasets<4.0.0
+pinecone
 pinecone-text
 transformers
 torch
