@@ -1,64 +1,57 @@
-# 📊 Infrastructure Performance & Latency Report
+# 📊 Enhanced Infrastructure Performance & Latency Report
 
 **Project:** Clinical Diagnostic Assistant (v1.0)  
-**Model:** Llama-3-8B-Instruct (4-bit NF4 Quantization)  
+**Model:** Llama-3-8B-Instruct (4-bit NF4 Quantization + LoRA)  
 **Hardware:** NVIDIA A10G Tensor Core GPU (16GB VRAM)  
 **Host:** Modal Serverless Infrastructure
 
 ---
 
-## 1. Performance Snapshot
+## 1. Verified Performance Metrics (Ground Truth)
 
-| Metric | Measurement | Status |
+Based on the final telemetry run with a **926-token** medical context:
+
+| Metric | Observed Value | Interpretation |
 | :--- | :--- | :--- |
-| **Hugging Face RAG Latency** | 0.840s | ✅ Optimized (BGE-Small) |
-| **GPU Time to First Token (TTFT)** | 1.35s | ⚠️ Moderate (Context Pre-fill) |
-| **GPU Throughput** | 18.22 tokens/sec | ⚠️ Low (Dequantization Tax) |
-| **Total Round-Trip Latency** | ~17.2s | ⚠️ High (Memory Bound) |
+| **Input Prompt Size** | 926 Tokens | Significant "pre-fill" load due to USMLE context chunks. |
+| **TTFT (Time to First Token)** | 1.358s | The "Reading" speed. Passable for RAG on A10G. |
+| **Throughput (TPS)** | 12.51 tokens/sec | **PRIMARY BOTTLENECK.** 4-bit dequantization overhead. |
+| **Total GPU Execution** | 18.386s | The "Writing" speed. Limits real-time interactivity. |
 
 ---
 
-## 2. Bottleneck Analysis: The "Memory Wall"
+## 2. Hardware Evidence: Visual Analysis
 
-The primary bottleneck is not the GPU's mathematical capability, but the **Memory Bandwidth** and **Dequantization Overhead** introduced by the `4-bit bitsandbytes` implementation.
+### A. GPU Memory Saturation
+![[Insert image_be0ef3.png here]]
 
-### A. The Dequantization Tax
-Because the A10G cannot compute math on 4-bit weights natively, every weight must be "unpacked" into 16-bit (BF16) format before the Tensor Core can process it.
+* **Observation:** VRAM is locked at 15.13 GiB.
+* **Analysis:** While 4-bit weights only require ~5.5 GB, the system has pre-allocated nearly the entire 16 GB for the **KV-Cache**. This is necessary to handle the high input prompt size (926 tokens) without crashing mid-generation, but it proves we are at the physical memory limit of the A10G.
 
-* **Observation:** GPU Utilization peaks at only 31-40%.
-* **Interpretation:** The GPU spends more time "waiting" for the CPU to manage the unpacking of weights than it does actually performing medical diagnostics. This is a classic **Compute-Bound vs Memory-Bound** mismatch.
+### B. The "Dequantization Tax" Stutter
+![[Insert image_be0ef3.png here - Referencing the Utilization % graph]]
 
-### B. VRAM Saturation (15.13 GiB)
-Despite using a 4-bit model (~5.5GB), the dashboard shows 15.13 GiB of VRAM usage.
-
-* **Reasoning:** The system pre-allocates a massive **KV-Cache** buffer to store the context of the USMLE textbook chunks. This ensures that as the conversation grows, the model doesn't crash, but it limits our ability to run multiple parallel instances on a single 16GB card.
-
----
-
-## 3. Hardware Evidence (Dashboard Analysis)
-
-Analysis of the Modal hardware telemetry provides the "Smoking Gun" for these conclusions:
-
-* **GPU Power Draw (62%):** The GPU is "coasting." It isn't being pushed to its thermal limits because the data pipeline is too slow to keep the Tensor Cores saturated.
-* **CPU Core Spikes (1.01 cores):** Indicates the Python interpreter is working at maximum capacity to manage the 4-bit kernel handshakes.
+* **Observation:** GPU Utilization fluctuates between 31% and 40%.
+* **Analysis:** The "valleys" in the utilization graph are the smoking gun for **Memory Bound** behavior. The GPU Tensor Cores are finishing the math so quickly that they must pause to wait for the `bitsandbytes` library to "unpack" the next set of 4-bit weights.
 
 ---
 
-## 4. Strategic Roadmap for v2.0 (The Speed Path)
+## 3. The "Mirroring" Bug Resolution
+![[Insert image_ca45db.png here]]
 
-To transition from a "working prototype" to a "production-grade agent," the following architectural shifts are required:
+* **The Issue:** The model previously echoed user input ("um its high temperature") instead of diagnosing.
+* **The Root Cause:** Invalid prompt formatting. Llama-3-8B-Instruct is a strict instruction-follower. Without the required double-newlines (`\n\n`) after the header tags, the model reverted to **Base Autocomplete Mode**.
+* **The Fix:** Enforced strict Meta-standard whitespace, triggering the "Assistant" weights.
 
-1.  **Migrate to vLLM (PagedAttention):**
-    By moving away from standard PyTorch wrappers to vLLM, we can utilize **PagedAttention**, which manages KV-cache more efficiently and reduces TTFT significantly.
-2.  **Transition to AWQ Quantization:**
-    Replacing `bitsandbytes` with **AWQ** (Activation-aware Weight Quantization) allows for "fused kernels." This performs dequantization and math in a single hardware step, eliminating the dequantization tax.
-3.  **Compute Shift:** Move the RAG embedding logic from Hugging Face's throttled CPUs to Modal's dedicated physical cores to eliminate the final 1-second network overhead.
+---
 
---- 🧠 LLM INFRASTRUCTURE METRICS ---
-├─ Input Prompt:      926 tokens
-├─ TTFT:              1.358s
-├─ Throughput:        12.51 tokens/sec
-└─ Total GPU Time:    18.386s
+## 4. Strategic Roadmap: Path to 50+ Tokens/Sec
+
+To transition from 12.5 t/s to production speeds, we must move past the "Memory Wall" using these three steps:
+
+1.  **vLLM Implementation:** Use **PagedAttention** to manage that 15GB VRAM usage more efficiently, allowing for faster TTFT.
+2.  **Quantization Migration:** Swap `bitsandbytes` (NF4) for **AWQ** or **GPTQ**. These use "fused kernels" that dequantize and compute math simultaneously.
+3.  **Prompt Caching:** Since USMLE contexts are large (926 tokens), we should cache the prompt prefix so the GPU doesn't re-read the entire textbook for every turn in a conversation.
 
 ![alt text](gpu_metrics_modal_bitsandbytes.png)
 
