@@ -1,0 +1,8 @@
+pip install
+load the awq model from awq-volume
+grab the request from web_endpoint
+setup textIteratorStreamer
+run the prompt through the model and append tokens to streamer as they are generated
+get ttft
+get all the other metrics
+send the result back
