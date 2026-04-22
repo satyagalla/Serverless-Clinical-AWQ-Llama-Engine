@@ -61,16 +61,36 @@ class MedicalLLM:
         from threading import Thread
         from transformers import TextIteratorStreamer
 
-        prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+        # Use HuggingFace's native Chat Template instead of raw f-strings
+        messages = [
+            {
+                "role": "system", 
+                "content": f"You are a highly authoritative clinical diagnostic AI. Use the provided USMLE medical context to answer the user's question.\n\nContext:\n{context}"
+            },
+            {
+                "role": "user", 
+                "content": question
+            }
+        ]
 
-You are a highly authoritative clinical diagnostic AI. Use the provided USMLE medical context to answer the user's question.
+        # The official Llama 3 Jinja template
+        llama3_template = (
+            "{% set loop_messages = messages %}"
+            "{% for message in loop_messages %}"
+            "{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\\n\\n'+ message['content'] | trim + '<|eot_id|>' %}"
+            "{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}"
+            "{{ content }}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' }}{% endif %}"
+        )
 
-Context:
-{context}<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-{question}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
-"""
+        # This automatically applies the exact <|begin_of_text|> and <|eot_id|> tags Llama 3 expects
+        prompt = self.tokenizer.apply_chat_template(
+            messages, 
+            chat_template=llama3_template,
+            tokenize=False, 
+            add_generation_prompt=True
+        )
         inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
         input_len = inputs['input_ids'].shape[1]
         
@@ -79,17 +99,21 @@ Context:
             skip_prompt=True, 
             skip_special_tokens=True
         )
+
+        # Rock-solid stopping criteria
+        terminators = [
+            self.tokenizer.eos_token_id,
+            self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        ]
         
         generation_kwargs = dict(
             **inputs,
             max_new_tokens=300,
             do_sample=True,
             temperature=0.1,
+            repetition_penalty=1.15,
             streamer=streamer,
-            eos_token_id=[
-                self.tokenizer.eos_token_id, 
-                self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-            ],
+            eos_token_id=terminators,
             pad_token_id=self.tokenizer.eos_token_id
         )
 

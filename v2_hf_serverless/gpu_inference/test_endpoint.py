@@ -5,8 +5,8 @@ import time
 DEV_URL = "https://akhilgalla41--llama3-8b-lora-medical-inference-awq-a-e9ecd9-dev.modal.run"
 
 payload = {
-    "question": "I have fever",
-    "context": "",
+    "question": "What is the primary mechanism of action for Metformin?",
+    "context": "Metformin decreases hepatic glucose production, decreases intestinal absorption of glucose, and improves insulin sensitivity by increasing peripheral glucose uptake and utilization.",
     "api_key": "@khIlgalla41"
 }
 
