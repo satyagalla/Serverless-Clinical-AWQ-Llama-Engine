@@ -1,29 +1,25 @@
 import modal
 import os
+import time
 from pydantic import BaseModel
 
-# --- 1. MISSING DEFINITIONS ---
 class RequestPayload(BaseModel):
     question: str
     context: str
     api_key: str
 
-# --- 2. DEFINE THE ENVIRONMENTS ---
-# Corrected: Removed "flash-attn" to ensure a strict ablation from bitsandbytes to AWQ
+# 1. Update the image to pull vLLM
 image = (
     modal.Image.debian_slim()
     .pip_install(
-        "torch", 
-        "transformers", 
-        "accelerate", 
-        "autoawq", 
+        "vllm", 
+        "transformers",
         "fastapi",
-        "pydantic",
-        "compressed-tensors"
+        "pydantic"
     )
 )
 
-app = modal.App("llama3-8b_lora_medical_inference_awq")
+app = modal.App("medical_llama-3.1-8b-instruct_lora_awq_inference_vllm")
 awq_volume = modal.Volume.from_name("awq-volume")
 
 @app.cls(
@@ -31,114 +27,88 @@ awq_volume = modal.Volume.from_name("awq-volume")
     image=image, 
     volumes={"/weights": awq_volume}, 
     scaledown_window=300, 
-    timeout=300 
+    timeout=300,
 )
+@modal.concurrent(max_inputs=10)
 class MedicalLLM:
     @modal.enter()
     def load_model(self):
-        import time
-        import torch
-        from transformers import AutoTokenizer, AutoModelForCausalLM
+        from vllm.engine.arg_utils import AsyncEngineArgs
+        from vllm.engine.async_llm_engine import AsyncLLMEngine
+        from transformers import AutoTokenizer
 
         start_load = time.perf_counter()
-
         self.model_dir = "/weights/awq-4bit"
-        print(f"🧠 Loading AWQ Model from {self.model_dir}...")
+        print(f"🧠 Booting vLLM Engine from {self.model_dir}...")
         
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_dir)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_dir,
-            low_cpu_mem_usage=True,
-            device_map="auto",
-            dtype=torch.float16 # Explicitly set for AWQ
+        # Load tokenizer purely for chat template formatting
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_dir, 
+            fix_mistral_regex=True
         )
-        load_time = time.perf_counter() - start_load
-        print(f"✅ GPU is ready in {load_time:.2f}s.")
+
+        # Configure the high-performance engine
+        engine_args = AsyncEngineArgs(
+            model=self.model_dir,
+            dtype="bfloat16",
+            max_model_len=4096,
+            tensor_parallel_size=1,
+            gpu_memory_utilization=0.90,
+            enforce_eager=False
+        )
+        self.engine = AsyncLLMEngine.from_engine_args(engine_args)
+        
+        print(f"✅ Engine online in {time.perf_counter() - start_load:.2f}s.")
 
     @modal.method()
-    def generate(self, question: str, context: str):
-        import time
-        from threading import Thread
-        from transformers import TextIteratorStreamer
+    async def generate(self, question: str, context: str):
+        from vllm import SamplingParams
+        import uuid
 
-        # Use HuggingFace's native Chat Template instead of raw f-strings
+        # 1. Standardize formatting without hardcoding Jinja templates
         messages = [
-            {
-                "role": "system", 
-                "content": f"You are a highly authoritative clinical diagnostic AI. Use the provided USMLE medical context to answer the user's question.\n\nContext:\n{context}"
-            },
-            {
-                "role": "user", 
-                "content": question
-            }
+            {"role": "system", "content": f"You are a highly authoritative clinical diagnostic AI. Use the provided USMLE medical context to answer the user's question.\n\nContext:\n{context}"},
+            {"role": "user", "content": question}
         ]
-
-        # The official Llama 3 Jinja template
-        llama3_template = (
-            "{% set loop_messages = messages %}"
-            "{% for message in loop_messages %}"
-            "{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\\n\\n'+ message['content'] | trim + '<|eot_id|>' %}"
-            "{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}"
-            "{{ content }}"
-            "{% endfor %}"
-            "{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' }}{% endif %}"
-        )
-
-        # This automatically applies the exact <|begin_of_text|> and <|eot_id|> tags Llama 3 expects
         prompt = self.tokenizer.apply_chat_template(
             messages, 
-            chat_template=llama3_template,
             tokenize=False, 
             add_generation_prompt=True
         )
-        inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
-        input_len = inputs['input_ids'].shape[1]
-        
-        streamer = TextIteratorStreamer(
-            self.tokenizer, 
-            skip_prompt=True, 
-            skip_special_tokens=True
-        )
 
-        # Rock-solid stopping criteria
-        terminators = [
-            self.tokenizer.eos_token_id,
-            self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        ]
-        
-        generation_kwargs = dict(
-            **inputs,
-            max_new_tokens=300,
-            do_sample=True,
+        # 2. Strict generation boundaries
+        sampling_params = SamplingParams(
             temperature=0.1,
             repetition_penalty=1.15,
-            streamer=streamer,
-            eos_token_id=terminators,
-            pad_token_id=self.tokenizer.eos_token_id
+            max_tokens=300,
+            stop_token_ids=[
+                self.tokenizer.eos_token_id, 
+                self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+            ]
         )
 
+        request_id = str(uuid.uuid4())
+        results_generator = self.engine.generate(prompt, sampling_params, request_id)
+
         start_time = time.perf_counter()
-        
-        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
-        thread.start()
-
-        generated_text = ""
         ttft = None
-
-        for new_text in streamer:
+        generated_text = ""
+        
+        # 3. Asynchronous metric tracking (Replaces TextIteratorStreamer)
+        async for request_output in results_generator:
             if ttft is None:
                 ttft = time.perf_counter() - start_time
-            generated_text += new_text
+            generated_text = request_output.outputs[0].text
 
-        thread.join()
         total_time = time.perf_counter() - start_time
         
-        tokens_gen = len(self.tokenizer.encode(generated_text, add_special_tokens=False))
-        
+        # 4. Hardware Deployment Metrics
+        input_len = len(request_output.prompt_token_ids)
+        tokens_gen = len(request_output.outputs[0].token_ids)
         generation_time = total_time - ttft
         tps = tokens_gen / generation_time if generation_time > 0 else 0
 
-        print(f"\n--- 🧠 LLM INFRASTRUCTURE METRICS ---")
+        print(f"\n--- 🧠 vLLM INFRASTRUCTURE METRICS ---")
         print(f"├─ Input Prompt:      {input_len} tokens")
         print(f"├─ Generated:         {tokens_gen} tokens")
         print(f"├─ TTFT:              {ttft:.3f}s")
@@ -148,16 +118,12 @@ class MedicalLLM:
 
         return generated_text
 
-# --- 5. SECURE WEB ENDPOINT ---
 @app.function(
     image=image, 
     secrets=[modal.Secret.from_name("api-secret")]
 )
 @modal.fastapi_endpoint(method="POST")
-def api_endpoint(payload: RequestPayload):
-    import time
-    import os 
-    
+async def api_endpoint(payload: RequestPayload):
     t0 = time.perf_counter()
     EXPECTED_KEY = os.environ.get("MICROSERVICE_SECRET_KEY")
     
@@ -167,7 +133,8 @@ def api_endpoint(payload: RequestPayload):
     model = MedicalLLM()
     t1 = time.perf_counter()
     
-    answer = model.generate.remote(payload.question, payload.context)
+    # Must explicitly await the remote call due to AsyncLLMEngine
+    answer = await model.generate.remote.aio(payload.question, payload.context)
     
     t2 = time.perf_counter()
     print(f"🏁 API TOTAL: {t2 - t0:.2f}s (Wait/Exec: {t2 - t1:.2f}s)")
