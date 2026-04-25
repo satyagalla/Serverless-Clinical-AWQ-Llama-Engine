@@ -65,10 +65,23 @@ class MedicalLLM:
         from vllm import SamplingParams
         import uuid
 
-        # 1. Standardize formatting without hardcoding Jinja templates
+        # 1. The Diagnostic System Prompt
         messages = [
-            {"role": "system", "content": f"You are a highly authoritative clinical diagnostic AI. Use the provided USMLE medical context to answer the user's question.\n\nContext:\n{context}"},
-            {"role": "user", "content": question}
+            {
+                "role": "system", 
+                "content": (
+                    "You are an expert, empathetic clinical diagnostic AI trained on USMLE standards. "
+                    "You must seamlessly route the user's input into one of two internal protocols without ever announcing your structural steps or sounding robotic:\n\n"
+                    "1. IF QUESTION: Provide a direct, authoritative answer using the provided context.\n"
+                    "2. IF SYMPTOM STATEMENT: Adopt the persona of a warm clinical intake physician. Invisibly use the context to briefly acknowledge the clinical reality of the symptom and naturally mention a few common differential diagnoses in passing. Conclude by asking a single targeted follow-up question (e.g., duration, severity) to narrow the scope.\n\n"
+                    "CRITICAL: Never use formulaic phrases like 'The clinical definition is' or 'The top three diagnoses are'. Speak conversationally and empathetically."
+                    f"\n\nContext:\n{context}"
+                )
+            },
+            {
+                "role": "user", 
+                "content": question
+            }
         ]
         prompt = self.tokenizer.apply_chat_template(
             messages, 
