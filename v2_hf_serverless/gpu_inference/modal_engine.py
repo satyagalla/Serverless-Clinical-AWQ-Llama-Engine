@@ -17,6 +17,13 @@ image = (
         "fastapi",
         "pydantic"
     )
+    .env({
+        # Routes PyTorch's heavy C++ Triton kernels
+        "TORCHINDUCTOR_CACHE_DIR": "/weights/compile_cache/torch",
+        
+        # THE FIX: Routes vLLM's Dynamo bytecode and graph wrappers
+        "VLLM_CACHE_ROOT": "/weights/compile_cache/vllm_root" 
+    })
 )
 
 app = modal.App("medical_llama-3.1-8b-instruct_lora_awq_inference_vllm")
