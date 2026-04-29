@@ -4,6 +4,7 @@ venv/
 .env
 
 model_training/llama-3.1-awq-4bit
+captures/
 
 
 *.json

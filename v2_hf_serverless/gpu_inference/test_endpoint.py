@@ -5,7 +5,7 @@ import time
 DEV_URL = "https://akhilgalla41--medical-llama-3-1-8b-instruct-lora-awq-f9aee9-dev.modal.run"
 
 payload = {
-    "question": "My head is hurting and my throat is hurting. I also feel weak. How do I feel better and prevent a flu?",
+    "question": "I have a fever",
     "context": "",
     "api_key": "@khIlgalla41"
 }
