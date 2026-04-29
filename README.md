@@ -51,7 +51,12 @@ Profiling is critical when migrating from raw weights to 4-bit AWQ on serverless
 ### GPU Memory Profiling (A10G)
 Below are the VRAM allocation comparisons demonstrating the footprint reduction from BitsAndBytes to the final AWQ target.
 
-![AWQ Metrics](your_awq_image_filename.png)
+#### BitsAndBytes
+<img src="./logs/gpu_metrics_modal_bitsandbytes.png" alt="BitsAndBytes Metrics" size="50%">
+<img src="./logs/gpu_metrics_modal_bitsandbytes_2.png" alt="BitsAndBytes Metrics" size="50%">
+
+#### AWQ
+<img src="./logs/gpu_metrics_modal_awq.png" alt="AWQ Metrics" size="50%">
 
 ---
 
