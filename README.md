@@ -1,12 +1,23 @@
 # Serverless Clinical AWQ Llama Engine (S.C.A.L.E.)
 
-**Live Inference Interface:** [Link to Hugging Face Space](https://huggingface.co/spaces/foobar41/llama3-8b_lora_medical_inference)
+**Live Inference Interface:** [Hugging Face Space](https://huggingface.co/spaces/foobar41/llama3-8b_lora_medical_inference)
 
 ## 🏗️ Architecture Overview
 
 **S.C.A.L.E.** is a stateless, multi-turn clinical inference microservice. It routes a hybrid sparse/dense vector retrieval pipeline through a **W4A16 AWQ-quantized Llama-3.1** backend, served via **vLLM** on ephemeral **Modal serverless GPUs**.
 
-This project implements a bare-metal MLOps approach to manage VRAM constraints, network I/O latency, and state management in production clinical deployments. The repository tracks the architectural migration from a local prototype (v0) to an AWS Docker container (v1), culminating in the final serverless vLLM pipeline (v2).
+This project implements a bare-metal MLOps approach to manage VRAM constraints, network I/O latency, and state management in production deployments. The repository tracks the architectural migration from a local prototype (v0) to an AWS Docker container (v1), culminating in the final serverless vLLM pipeline (v2).
+
+---
+
+## ⚡ Key Performance Metrics
+
+| Metric | Value |
+| :--- | :--- |
+| **Time-To-First-Token (TTFT)** | 0.529s |
+| **End-to-End Latency** | Sub-2s |
+| **Throughput** | ~60 tokens/sec |
+| **Diagnostic Accuracy** | 14% absolute gain in USMLE-style evaluations. |
 
 ---
 
@@ -21,24 +32,24 @@ This project implements a bare-metal MLOps approach to manage VRAM constraints, 
 | **Vector Database** | Pinecone (384-dimensional Hybrid Sparse/Dense) |
 | **Embeddings** | BGE-Small (Dense) + BM25 (Sparse) + MiniLM (Cross-Encoder Reranking) |
 | **Client/State Manager** | Hugging Face Spaces (`v2_hf_serverless/cpu_orchestrator/app.py`) |
-
 ---
 
 ## 🛠️ Infrastructure & Implementation Details
 
-### 1. Stateless Multi-Turn Architecture
-To support horizontal scaling across serverless GPU containers, the backend is strictly stateless. Conversational state is serialized client-side and injected into the HTTP POST payload on every request. The system relies on **vLLM's KV cache** to deduplicate prefix computation for warm containers, avoiding the compute overhead of full-context reprocessing.
+### 1. The Hardware Audit: AWQ vs. NF4
+Early prototypes utilizing BitsAndBytes NF4 quantization resulted in severe compute bottlenecks, stalling the A10G GPU at ~35% utilization. The hardware was bottlenecked by the "dequantization tax"—spending more cycles unpacking weights than performing matrix multiplications. Migrating the pipeline to an AWQ (Activation-Aware Weight Quantization) format leveraged fused kernels, unlocking near 100% GPU utilization and driving throughput to 60 tokens/sec.
 
-### 2. I/O Latency and vLLM Compilation
-Standard PyTorch compilation (`torch.compile`) over network-attached volumes (Modal NFS) introduced significant cold-start latency due to high-IOPS binary reads. This engine enforces raw eager execution (`enforce_eager=True` in vLLM), sacrificing peak throughput (TPS) to bypass network I/O bottlenecks and optimize serverless cold-start times.
+### 2. The Precision Trap: The FP16 NaN Wall
+During deployment, the pipeline encountered severe numerical instability (NaN walls) when running in standard FP16. Llama-3.1's SwiGLU activation functions regularly produce activation spikes exceeding 65,504 (the FP16 upper bound). To prevent tensor overflow, deploying with a strict **BF16 (Bfloat16)** compute data type is a hard architectural requirement.
 
-### 3. State Machine Routing (Instruct Alignment)
-The pipeline leverages the RLHF alignment of the Llama-3.1-8B-Instruct architecture to execute a deterministic state machine via system prompting. It handles four distinct conversational states:
-* **Pure Question:** Authoritative RAG retrieval.
-* **Pure Symptoms:** Clinical intake formatting and differential generation.
-* **Mixed (Compound):** Markdown-enforced structural breaks to separate empathetic intake from instructional answers.
-* **Conversational Follow-up:** Context-aware continuation to prevent diagnostic looping on conversational filler.
+### 3. Stateless Multi-Turn Architecture
+To support horizontal scaling across serverless GPU containers, the backend is strictly stateless. Conversational state is serialized client-side and injected into the HTTP POST payload on every request. The system relies on vLLM's KV cache to deduplicate prefix computation for warm containers, avoiding the compute overhead of full-context reprocessing.
 
+### 4. I/O Latency and vLLM Compilation
+Standard PyTorch compilation (`torch.compile`) over network-attached volumes (Modal NFS) introduced significant cold-start latency due to high-IOPS binary reads. This engine enforces raw eager execution (`enforce_eager=True` in vLLM), sacrificing peak throughput to bypass network I/O bottlenecks and optimize serverless cold-start times.
+
+### 5. State Machine Routing (Instruct Alignment)
+The pipeline leverages the RLHF alignment of the Llama-3.1-8B-Instruct architecture to execute a deterministic state machine via system prompting, handling four conversational states (Pure Question, Pure Symptoms, Mixed Compound, and Conversational Follow-up) to prevent diagnostic looping on conversational filler.
 *Below: Resolving algorithmic literalism. The 'Before' state shows the pipeline failing to handle conversational filler ("I see") and entering an echo loop. The 'After' state demonstrates the hardened Instruct-aligned routing.*
 <img src="./logs/collage.png" alt="LLM alignment" justify-content="center" />
 
@@ -64,7 +75,12 @@ Below are the VRAM allocation comparisons demonstrating the footprint reduction 
 
 ## 🚀 Deployment & Usage
 
-### 1. Environment Setup
+### 1. System Prerequisites
+* **Cloud Deployment:** A Modal account with A10G access.
+* **Local Development:** * Minimum VRAM: [INSERT MINIMUM VRAM]
+    * CUDA Toolkit: [INSERT REQUIRED CUDA VERSION]
+
+### 2. Environment Setup
 The project uses `uv` for fast dependency resolution. Install the necessary serverless and development dependencies:
 
 ```bash
