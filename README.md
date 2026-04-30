@@ -17,7 +17,6 @@ This project implements a bare-metal MLOps approach to manage VRAM constraints, 
 | **Time-To-First-Token (TTFT)** | 0.529s |
 | **End-to-End Latency** | Sub-2s |
 | **Throughput** | ~60 tokens/sec |
-| **Diagnostic Accuracy** | 14% absolute gain in USMLE-style evaluations. |
 
 ---
 
@@ -77,8 +76,7 @@ Below are the VRAM allocation comparisons demonstrating the footprint reduction 
 
 ### 1. System Prerequisites
 * **Cloud Deployment:** A Modal account with A10G access.
-* **Local Development:** * Minimum VRAM: [INSERT MINIMUM VRAM]
-    * CUDA Toolkit: [INSERT REQUIRED CUDA VERSION]
+* **Local Development:** * Minimum VRAM: 16GiB
 
 ### 2. Environment Setup
 The project uses `uv` for fast dependency resolution. Install the necessary serverless and development dependencies:
