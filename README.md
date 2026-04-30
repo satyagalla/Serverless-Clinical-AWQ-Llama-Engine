@@ -39,6 +39,9 @@ The pipeline leverages the RLHF alignment of the Llama-3.1-8B-Instruct architect
 * **Mixed (Compound):** Markdown-enforced structural breaks to separate empathetic intake from instructional answers.
 * **Conversational Follow-up:** Context-aware continuation to prevent diagnostic looping on conversational filler.
 
+*Below: Resolving algorithmic literalism. The 'Before' state shows the pipeline failing to handle conversational filler ("I see") and entering an echo loop. The 'After' state demonstrates the hardened Instruct-aligned routing.*
+<img src="./logs/collage.png" alt="LLM alignment" justify-content="center" />
+
 ### 4. Deterministic Query Expansion
 To improve retrieval precision in Pinecone's 384D embedding space, symptom queries under 8 words are intercepted and programmatically expanded with specific medical taxonomy prior to vectorization and cross-encoder reranking.
 
@@ -52,14 +55,10 @@ Profiling is critical when migrating from raw weights to 4-bit AWQ on serverless
 Below are the VRAM allocation comparisons demonstrating the footprint reduction from BitsAndBytes to the final AWQ target.
 
 #### BitsAndBytes
-
-<p align="center">
-  <img src="./logs/gpu_metrics_modal_bitsandbytes.png" alt="BitsAndBytes Metrics" width="49%" height="250" />
-  <img src="./logs/gpu_metrics_modal_bitsandbytes_2.png" alt="BitsAndBytes Metrics" width="49%" height="250" />
-</p>
+<img src="./logs/gpu_metrics_modal_bitsandbytes.png" alt="BitsAndBytes Metrics" height="500" />
 
 #### AWQ
-<img src="./logs/gpu_metrics_modal_awq.png" alt="AWQ Metrics">
+<img src="./logs/gpu_metrics_modal_awq.png" alt="AWQ Metrics" />
 
 ---
 
